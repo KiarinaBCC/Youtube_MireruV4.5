@@ -1,0 +1,246 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Youtube見れーる V4.5+</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      padding: 20px;
+      background-color: #f4f4f4;
+      transition: background-color 0.3s, color 0.3s;
+      color: #000;
+      text-align: center;
+    }
+
+    body.dark {
+      background-color: #121212;
+      color: #fff;
+    }
+
+    input[type="text"], select {
+      padding: 10px;
+      margin: 5px 0;
+      width: 100%;
+      max-width: 500px;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 1rem;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+
+    .form-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .option-group {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .option-group label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.95rem;
+    }
+
+    iframe, .embed-container {
+      margin-top: 20px;
+      border-radius: 8px;
+    }
+
+    .small { width: 320px; height: 180px; }
+    .medium { width: 640px; height: 360px; }
+    .large { width: 960px; height: 540px; }
+    .fullscreen { width: 100%; height: 70vh; }
+
+    #message {
+      margin-top: 10px;
+      font-size: 1em;
+    }
+    #message.error {
+      color: red;
+    }
+    #message.loading {
+      color: blue;
+    }
+    #title {
+      margin-top: 10px;
+      font-weight: bold;
+      font-size: 1.2em;
+    }
+
+    #history {
+      margin-top: 30px;
+    }
+    #history h4 {
+      margin-bottom: 10px;
+    }
+    .history-item {
+      cursor: pointer;
+      color: blue;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <h3>Youtube見れーる V4.5+</h3>
+
+  <div class="form-container">
+    <input id="videoUrl" type="text" placeholder="動画URLを入力（YouTube, TikTok, Instagram）">
+
+    <select id="sizeSelector">
+      <option value="medium">中サイズ</option>
+      <option value="small">小サイズ</option>
+      <option value="large">大サイズ</option>
+      <option value="fullscreen">全画面</option>
+    </select>
+
+    <div class="option-group">
+      <label><input type="checkbox" id="autoplay"> 自動再生</label>
+      <label><input type="checkbox" onchange="toggleDarkMode()"> ダークモード</label>
+    </div>
+
+    <button onclick="embedVideo()">決定</button>
+  </div>
+
+  <div id="message"></div>
+  <div id="title"></div>
+  <div id="videoContainer"></div>
+
+  <div id="history">
+    <h4>最近見た動画</h4>
+    <ul id="historyList"></ul>
+  </div>
+
+  <h6>Created by BCC</h6>
+
+  <script>
+    function toggleDarkMode() {
+      document.body.classList.toggle("dark");
+    }
+
+    function embedVideo() {
+      const url = document.getElementById("videoUrl").value.trim();
+      const autoplay = document.getElementById("autoplay").checked;
+      const size = document.getElementById("sizeSelector").value;
+      const message = document.getElementById("message");
+      const titleElem = document.getElementById("title");
+      const videoContainer = document.getElementById("videoContainer");
+
+      message.textContent = "";
+      titleElem.textContent = "";
+      videoContainer.innerHTML = "";
+
+      if (!url) {
+        message.textContent = "URLを入力してください。";
+        message.className = "error";
+        return;
+      }
+
+      message.textContent = "読み込み中...";
+      message.className = "loading";
+
+      let embedUrl = "";
+      let fetchTitle = false;
+
+      // YouTube
+      const ytMatch = url.match(/(?:youtube\.com\/.*[?&]v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+      if (ytMatch) {
+        const id = ytMatch[1];
+        embedUrl = `https://www.youtube.com/embed/${id}${autoplay ? "?autoplay=1" : ""}`;
+        fetchTitle = true;
+      }
+
+      // TikTok
+      const tkMatch = url.match(/tiktok\.com\/@[^\/]+\/video\/(\d+)/);
+      if (tkMatch) {
+        embedUrl = `https://www.tiktok.com/embed/v2/${tkMatch[1]}`;
+      }
+
+      // Instagram
+      const igMatch = url.match(/instagram\.com\/(reel|p|tv)\/([^\/?#]+)/);
+      if (igMatch) {
+        embedUrl = `https://www.instagram.com/${igMatch[1]}/${igMatch[2]}/embed`;
+      }
+
+      if (!embedUrl) {
+        message.textContent = "対応していない、または無効なURLです。";
+        message.className = "error";
+        return;
+      }
+
+      const iframe = document.createElement("iframe");
+      iframe.src = embedUrl;
+      iframe.className = size;
+      iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture";
+      iframe.allowFullscreen = true;
+
+      videoContainer.appendChild(iframe);
+      message.textContent = "";
+
+      // 保存と履歴
+      saveToHistory(url);
+
+      // YouTubeタイトル取得（CORS回避できる場合のみ）
+      if (fetchTitle) {
+        fetch(`https://noembed.com/embed?url=${encodeURIComponent(url)}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.title) {
+              titleElem.textContent = data.title;
+            }
+          });
+      }
+    }
+
+    function saveToHistory(url) {
+      const key = "videoHistory";
+      let history = JSON.parse(localStorage.getItem(key)) || [];
+      if (!history.includes(url)) {
+        history.unshift(url);
+        if (history.length > 5) history = history.slice(0, 5);
+        localStorage.setItem(key, JSON.stringify(history));
+        renderHistory();
+      }
+    }
+
+    function renderHistory() {
+      const key = "videoHistory";
+      const list = document.getElementById("historyList");
+      list.innerHTML = "";
+
+      const history = JSON.parse(localStorage.getItem(key)) || [];
+      history.forEach(url => {
+        const li = document.createElement("li");
+        li.textContent = url;
+        li.className = "history-item";
+        li.onclick = () => {
+          document.getElementById("videoUrl").value = url;
+          embedVideo();
+        };
+        list.appendChild(li);
+      });
+    }
+
+    // 初期表示で履歴をレンダリング
+    renderHistory();
+  </script>
+
+</body>
+</html>
